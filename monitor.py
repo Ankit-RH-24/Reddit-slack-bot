@@ -1,7 +1,10 @@
 import logging
+import logging.handlers
+import multiprocessing
 import os
+import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import praw
 import prawcore
@@ -27,7 +30,8 @@ class ChannelConfig:
 
 @dataclass
 class AppConfig:
-    subreddits: list
+    scope: str
+    blacklist_subreddits: list
     stream_pause_after_exception: int
     max_stream_retries: int
     slack: SlackConfig
@@ -70,9 +74,10 @@ def load_config(path: str) -> AppConfig:
     log_raw = raw.get("logging", {})
 
     return AppConfig(
-        subreddits=reddit_raw.get("subreddits", []),
+        scope=reddit_raw.get("scope", "all"),
+        blacklist_subreddits=reddit_raw.get("blacklist_subreddits", []),
         stream_pause_after_exception=reddit_raw.get("stream_pause_after_exception", 5),
-        max_stream_retries=reddit_raw.get("max_stream_retries", 10),
+        max_stream_retries=reddit_raw.get("max_stream_retries", -1),
         slack=slack_cfg,
         channels=channels,
         db_path=db_raw.get("path", "data/bot.db"),
@@ -90,7 +95,6 @@ def load_config(path: str) -> AppConfig:
 
 class KeywordMatcher:
     def __init__(self, channels: list):
-        # Pre-process: store (channel_name, original_keyword, lowered_keyword, case_sensitive)
         self._rules = []
         for ch in channels:
             for kw in ch.keywords:
@@ -116,130 +120,256 @@ class KeywordMatcher:
 
 
 # ---------------------------------------------------------------------------
-# Reddit monitor
+# Notification dispatcher — shared by both worker processes
+# ---------------------------------------------------------------------------
+
+def send_notification(item, item_type: str, matcher, notifier, db, blacklist_set) -> bool:
+    """
+    Route a PRAW submission or comment through the full pipeline.
+
+    item_type: "submission" or "comment"
+    Returns True if a Slack notification was sent, False otherwise.
+    Plug Slack, Discord, or any webhook into notifier to change destination.
+    """
+    subreddit = item.subreddit.display_name
+
+    if subreddit.lower() in blacklist_set:
+        return False
+
+    if item_type == "submission":
+        title   = item.title or ""
+        body    = item.selftext or ""
+    else:  # comment
+        title   = ""
+        body    = item.body or ""
+
+    item_id = item.id
+    url     = f"https://reddit.com{item.permalink}"
+    author  = str(item.author) if item.author else "[deleted]"
+    created = item.created_utc
+
+    result = matcher.match(title, body)
+    if result is None:
+        return False
+
+    channel_name, matched_keyword = result
+
+    if db.is_duplicate(item_id):
+        logger.debug("Duplicate %s skipped: %s", item_type, item_id)
+        return False
+
+    logger.info(
+        "Match — %s=%s r/%s channel=%s keyword=%r",
+        item_type, item_id, subreddit, channel_name, matched_keyword,
+    )
+
+    success = notifier.send(
+        channel_name=channel_name,
+        post_id=item_id,
+        title=title if title else f"[comment in r/{subreddit}]",
+        subreddit=subreddit,
+        author=author,
+        url=url,
+        matched_keyword=matched_keyword,
+        created_utc=created,
+        selftext=body,
+    )
+
+    if success:
+        db.mark_processed(
+            post_id=item_id,
+            title=title or body[:100],
+            subreddit=subreddit,
+            matched_channel=channel_name,
+            author=author,
+            url=url,
+        )
+    return success
+
+
+# ---------------------------------------------------------------------------
+# Worker setup helpers
+# ---------------------------------------------------------------------------
+
+def _setup_worker_logging(config: AppConfig):
+    """Configure logging in a freshly spawned child process."""
+    os.makedirs(os.path.dirname(config.log_file), exist_ok=True)
+    level = getattr(logging, config.log_level.upper(), logging.INFO)
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    file_handler = logging.handlers.RotatingFileHandler(
+        config.log_file,
+        maxBytes=config.log_max_bytes,
+        backupCount=config.log_backup_count,
+    )
+    file_handler.setFormatter(fmt)
+    root.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(fmt)
+    root.addHandler(stream_handler)
+
+
+def _build_worker_deps(config: AppConfig):
+    """Create per-process PRAW, DB, Notifier, Matcher, and blacklist set."""
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    os.makedirs(os.path.dirname(config.db_path), exist_ok=True)
+
+    reddit = praw.Reddit(
+        client_id=os.environ["REDDIT_CLIENT_ID"],
+        client_secret=os.environ["REDDIT_CLIENT_SECRET"],
+        user_agent=os.environ["REDDIT_USER_AGENT"],
+    )
+    db = Database(config.db_path)
+    notifier = SlackNotifier(config.channels, config.slack)
+    matcher = KeywordMatcher(config.channels)
+    blacklist_set = {s.lower() for s in config.blacklist_subreddits}
+    return reddit, db, notifier, matcher, blacklist_set
+
+
+# ---------------------------------------------------------------------------
+# Module-level worker functions (must be picklable for multiprocessing)
+# ---------------------------------------------------------------------------
+
+def _submission_worker(config: AppConfig, shutdown_event):
+    """Worker process: streams r/all (or configured scope) submissions."""
+    _setup_worker_logging(config)
+    log = logging.getLogger(__name__)
+    log.info("Submission worker started (pid=%d)", os.getpid())
+
+    reddit, db, notifier, matcher, blacklist_set = _build_worker_deps(config)
+    processed_count = 0
+    retry_count = 0
+
+    while not shutdown_event.is_set():
+        if config.max_stream_retries != -1 and retry_count >= config.max_stream_retries:
+            log.error("Submission worker reached max retries (%d). Stopping.", config.max_stream_retries)
+            break
+
+        try:
+            log.info("Submission worker: starting stream (attempt %d)...", retry_count + 1)
+            for submission in reddit.subreddit(config.scope).stream.submissions(skip_existing=True):
+                if shutdown_event.is_set():
+                    break
+                if send_notification(submission, "submission", matcher, notifier, db, blacklist_set):
+                    processed_count += 1
+                    retry_count = 0
+                    if processed_count % 1000 == 0:
+                        log.info("Submission worker: processed %d items. Running cleanup...", processed_count)
+                        db.cleanup_old_records(config.cleanup_older_than_days)
+
+        except prawcore.exceptions.ResponseException as e:
+            if e.response.status_code == 401:
+                log.critical("Reddit 401 in submission worker. Check credentials. Stopping.")
+                break
+            log.warning("ResponseException in submission worker: %s. Pausing %ds.", e, config.stream_pause_after_exception)
+            time.sleep(config.stream_pause_after_exception)
+            retry_count += 1
+
+        except prawcore.exceptions.RequestException as e:
+            log.warning("RequestException in submission worker: %s. Pausing %ds.", e, config.stream_pause_after_exception)
+            time.sleep(config.stream_pause_after_exception)
+            retry_count += 1
+
+        except Exception as e:
+            log.exception("Unexpected error in submission worker: %s", e)
+            time.sleep(config.stream_pause_after_exception)
+            retry_count += 1
+
+    log.info("Submission worker exiting (pid=%d)", os.getpid())
+    db.close()
+
+
+def _comment_worker(config: AppConfig, shutdown_event):
+    """Worker process: streams r/all (or configured scope) comments."""
+    _setup_worker_logging(config)
+    log = logging.getLogger(__name__)
+    log.info("Comment worker started (pid=%d)", os.getpid())
+
+    reddit, db, notifier, matcher, blacklist_set = _build_worker_deps(config)
+    processed_count = 0
+    retry_count = 0
+
+    while not shutdown_event.is_set():
+        if config.max_stream_retries != -1 and retry_count >= config.max_stream_retries:
+            log.error("Comment worker reached max retries (%d). Stopping.", config.max_stream_retries)
+            break
+
+        try:
+            log.info("Comment worker: starting stream (attempt %d)...", retry_count + 1)
+            for comment in reddit.subreddit(config.scope).stream.comments(skip_existing=True):
+                if shutdown_event.is_set():
+                    break
+                if send_notification(comment, "comment", matcher, notifier, db, blacklist_set):
+                    processed_count += 1
+                    retry_count = 0
+                    if processed_count % 1000 == 0:
+                        log.info("Comment worker: processed %d items. Running cleanup...", processed_count)
+                        db.cleanup_old_records(config.cleanup_older_than_days)
+
+        except prawcore.exceptions.ResponseException as e:
+            if e.response.status_code == 401:
+                log.critical("Reddit 401 in comment worker. Check credentials. Stopping.")
+                break
+            log.warning("ResponseException in comment worker: %s. Pausing %ds.", e, config.stream_pause_after_exception)
+            time.sleep(config.stream_pause_after_exception)
+            retry_count += 1
+
+        except prawcore.exceptions.RequestException as e:
+            log.warning("RequestException in comment worker: %s. Pausing %ds.", e, config.stream_pause_after_exception)
+            time.sleep(config.stream_pause_after_exception)
+            retry_count += 1
+
+        except Exception as e:
+            log.exception("Unexpected error in comment worker: %s", e)
+            time.sleep(config.stream_pause_after_exception)
+            retry_count += 1
+
+    log.info("Comment worker exiting (pid=%d)", os.getpid())
+    db.close()
+
+
+# ---------------------------------------------------------------------------
+# RedditMonitor — thin process orchestrator
 # ---------------------------------------------------------------------------
 
 class RedditMonitor:
     def __init__(self, config: AppConfig):
         self._config = config
-        self._db = Database(config.db_path)
-        self._notifier = SlackNotifier(config.channels, config.slack)
-        self._matcher = KeywordMatcher(config.channels)
-        self._processed_count = 0
-        self._shutdown_requested = False
-
-        self._reddit = praw.Reddit(
-            client_id=os.environ["REDDIT_CLIENT_ID"],
-            client_secret=os.environ["REDDIT_CLIENT_SECRET"],
-            user_agent=os.environ["REDDIT_USER_AGENT"],
-        )
-
-    def shutdown(self):
-        self._shutdown_requested = True
-        self._db.close()
-        logger.info("RedditMonitor: shutdown complete")
+        self._shutdown_event = multiprocessing.Event()
 
     def run(self):
-        cfg = self._config
-        max_retries = cfg.max_stream_retries
-        retry_count = 0
+        sub_proc = multiprocessing.Process(
+            target=_submission_worker,
+            args=(self._config, self._shutdown_event),
+            name="submission-worker",
+            daemon=True,
+        )
+        cmt_proc = multiprocessing.Process(
+            target=_comment_worker,
+            args=(self._config, self._shutdown_event),
+            name="comment-worker",
+            daemon=True,
+        )
 
-        while not self._shutdown_requested:
-            if max_retries != -1 and retry_count >= max_retries:
-                logger.error(
-                    "Reached max stream retries (%d). Stopping.", max_retries
-                )
-                break
-
-            try:
-                logger.info(
-                    "Starting submission stream (attempt %d)...",
-                    retry_count + 1,
-                )
-                self._stream_submissions()
-
-            except prawcore.exceptions.ResponseException as exc:
-                if exc.response.status_code == 401:
-                    logger.critical(
-                        "Reddit authentication failed (401). Check credentials. Stopping."
-                    )
-                    break
-                logger.warning("Reddit ResponseException: %s. Pausing %ds.", exc, cfg.stream_pause_after_exception)
-                time.sleep(cfg.stream_pause_after_exception)
-                retry_count += 1
-
-            except prawcore.exceptions.RequestException as exc:
-                logger.warning("Reddit RequestException: %s. Pausing %ds.", exc, cfg.stream_pause_after_exception)
-                time.sleep(cfg.stream_pause_after_exception)
-                retry_count += 1
-
-            except Exception as exc:
-                logger.exception("Unexpected error in stream: %s", exc)
-                time.sleep(cfg.stream_pause_after_exception)
-                retry_count += 1
-
-    def _stream_submissions(self):
-        subreddit_str = "+".join(self._config.subreddits)
-        subreddit = self._reddit.subreddit(subreddit_str)
-
-        for submission in subreddit.stream.submissions(skip_existing=True):
-            if self._shutdown_requested:
-                break
-            self._process_submission(submission)
-            # Reset retry counter on any successful iteration
-            # (we're inside the generator loop, so we track resets via a flag)
-
-    def _process_submission(self, submission):
-        post_id = submission.id
-        title = submission.title or ""
-        selftext = submission.selftext or ""
-        subreddit = submission.subreddit.display_name
-        author = str(submission.author) if submission.author else "[deleted]"
-        url = f"https://reddit.com{submission.permalink}"
-        created_utc = submission.created_utc
-
-        result = self._matcher.match(title, selftext)
-        if result is None:
-            return
-
-        channel_name, matched_keyword = result
-
-        if self._db.is_duplicate(post_id):
-            logger.debug("Duplicate post skipped: %s", post_id)
-            return
-
+        sub_proc.start()
+        cmt_proc.start()
         logger.info(
-            "Match found — post=%s subreddit=%s channel=%s keyword=%r",
-            post_id, subreddit, channel_name, matched_keyword,
+            "Started submission worker (pid=%d) and comment worker (pid=%d)",
+            sub_proc.pid, cmt_proc.pid,
         )
 
-        success = self._notifier.send(
-            channel_name=channel_name,
-            post_id=post_id,
-            title=title,
-            subreddit=subreddit,
-            author=author,
-            url=url,
-            matched_keyword=matched_keyword,
-            created_utc=created_utc,
-        )
+        sub_proc.join()
+        cmt_proc.join()
 
-        if success:
-            self._db.mark_processed(
-                post_id=post_id,
-                title=title,
-                subreddit=subreddit,
-                matched_channel=channel_name,
-                author=author,
-                url=url,
-            )
-            self._processed_count += 1
-
-            if self._processed_count % 1000 == 0:
-                logger.info(
-                    "Processed %d posts total. Running cleanup...",
-                    self._processed_count,
-                )
-                self._db.cleanup_old_records(self._config.cleanup_older_than_days)
-        else:
-            logger.warning("Failed to send Slack notification for post %s", post_id)
+    def shutdown(self):
+        logger.info("Shutdown requested — signalling workers...")
+        self._shutdown_event.set()

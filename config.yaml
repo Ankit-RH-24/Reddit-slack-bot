@@ -1,12 +1,16 @@
 reddit:
-  subreddits: [mentalhealth, therapy, psychology, depression, anxiety, selfimprovement, healthandfitness]
+  # "all" = global scope (recommended). Set to a comma-joined string for narrower scope.
+  scope: all
+  blacklist_subreddits:
+    - memes
+    - dankmemes
+    - AskReddit
+    - funny
+    - pics
+    - gaming
+    - worldnews
   stream_pause_after_exception: 5
-  max_stream_retries: 10  # -1 = infinite
-
-slack:
-  rate_limit_base_delay: 1.0
-  rate_limit_max_delay: 64.0
-  rate_limit_max_retries: 6
+  max_stream_retries: -1   # infinite — required for 24/7 Koyeb deployment
 
 channels:
   - name: rocket_health
@@ -15,8 +19,117 @@ channels:
     case_sensitive: false
   - name: therapy_psychology
     webhook_env_var: SLACK_WEBHOOK_B
-    keywords: ["online therapy", "psychologists", "counseling", "mental health app"]
     case_sensitive: false
+    keywords:
+      # Original
+      - "online therapy"
+      - "psychologists"
+      - "counseling"
+      - "mental health app"
+      - "find a therapist"
+      # Competitors — direct
+      - "amaha therapy"
+      - "mindpeers counseling"
+      - "lissun mental health"
+      - "yourdost psychologists"
+      - "betterlyf online therapy"
+      # Competitors — specialized platforms
+      - "trijog counseling"
+      - "hopequre wellness"
+      - "talktoangel psychiatrists"
+      - "wysa human coaching"
+      - "manoshala therapist"
+      # Competitor comparison
+      - "amaha vs betterlyf"
+      - "best apps like mindpeers"
+      - "trijog therapy reviews"
+      - "affordable alternatives to amaha"
+      # ADHD (solution-oriented)
+      - "adhd therapy for adults"
+      - "cbt for adhd"
+      - "adhd executive function coaching"
+      - "therapists specializing in adhd"
+      - "online adhd counseling"
+      # BPD
+      - "dbt therapy for bpd"
+      - "bpd support groups and counseling"
+      - "specialist for bpd treatment"
+      - "bpd relationship counseling"
+      - "dialectical behavior therapy online"
+      # Psychiatry / integrated care
+      - "psychiatrist and therapist combo"
+      - "online psychiatric consultation"
+      - "medication management and talk therapy"
+      - "psychiatrist for anxiety and depression"
+      - "integrated mental health care app"
+      # Credential-focused
+      - "rci registered clinical psychologist"
+      - "licensed therapist online"
+      - "m.phil psychology counselor"
+      # Language / culture
+      - "therapy in hindi"
+      - "culturally sensitive counseling"
+      - "vernacular mental health support"
+      - "counseling in tamil"
+      - "psychologists speaking marathi"
+      - "bengali speaking therapist online"
+      # Urgency / action
+      - "book therapy session now"
+      - "24/7 mental health chat"
+      - "first therapy session discount"
+      # Niche therapy
+      - "trauma informed therapy"
+      - "lgbtq friendly therapists"
+      - "couples counseling online"
+      # Mental health app / tech
+      - "self-care and therapy app"
+      - "best app to find psychologists"
+      - "anonymous mental health chat app"
+      - "pocket therapist app"
+      - "daily mood tracker with therapy"
+      # India — geo-modified high intent
+      - "online therapy india"
+      - "psychologists in india"
+      - "best counseling apps india"
+      - "indian mental health platform"
+      - "therapists in bangalore"
+      - "mumbai counseling services"
+      - "psychologists in delhi ncr"
+      - "therapy sessions pune"
+      - "hyderabad mental health experts"
+      - "clinical psychologist near me"
+      # India — professional & regulatory
+      - "m.phil clinical psychology therapist"
+      - "licensed indian counselors online"
+      - "nimhans trained psychologists"
+      - "tiss certified counselors"
+      # India — cultural stressors
+      - "family pressure counseling india"
+      - "workplace stress indian corporate"
+      - "academic pressure therapy india"
+      - "intergenerational trauma indian context"
+      # India — condition-specific
+      - "adult adhd assessment india"
+      - "adhd therapy for students india"
+      - "cbt for adhd bangalore"
+      - "cbt for adhd mumbai"
+      - "dbt therapy centers in india"
+      - "dialectical behavior therapy india online"
+      - "psychiatrists for anxiety india"
+      - "best psychiatrist for bpd india"
+      # India — additional competitors & NGOs
+      - "innerhour"
+      - "the banyan"
+      - "lonepack"
+      - "white swan foundation"
+      - "scarf india"
+      - "betterhelp alternatives india"
+      - "affordable therapy like yourdost"
+
+slack:
+  rate_limit_base_delay: 1.0
+  rate_limit_max_delay: 64.0
+  rate_limit_max_retries: 6
 
 database:
   path: data/bot.db

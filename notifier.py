@@ -45,6 +45,7 @@ class SlackNotifier:
         url: str,
         matched_keyword: str,
         created_utc: float,
+        selftext: str = "",
     ) -> bool:
         client = self._clients.get(channel_name)
         if client is None:
@@ -58,6 +59,7 @@ class SlackNotifier:
             url=url,
             matched_keyword=matched_keyword,
             created_utc=created_utc,
+            selftext=selftext,
         )
         return self._send_with_retry(client, blocks, channel_name)
 
@@ -69,11 +71,12 @@ class SlackNotifier:
         url: str,
         matched_keyword: str,
         created_utc: float,
+        selftext: str = "",
     ) -> list:
         posted_dt = datetime.fromtimestamp(created_utc, tz=timezone.utc)
         posted_str = posted_dt.strftime("%Y-%m-%d %H:%M UTC")
 
-        return [
+        blocks = [
             {
                 "type": "header",
                 "text": {
@@ -87,15 +90,15 @@ class SlackNotifier:
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": f"*Title*\n<{url}|{title}>",
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*Author*\nu/{author}",
+                        "text": f"*Title*\n*<{url}|{title}>*",
                     },
                     {
                         "type": "mrkdwn",
                         "text": f"*Subreddit*\nr/{subreddit}",
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Author*\nu/{author}",
                     },
                     {
                         "type": "mrkdwn",
@@ -105,6 +108,37 @@ class SlackNotifier:
                         "type": "mrkdwn",
                         "text": f"*Posted*\n{posted_str}",
                     },
+                ],
+            },
+        ]
+
+        # Content snippet — only for text posts (selftext posts, not link posts)
+        snippet = selftext.strip()
+        if snippet:
+            if len(snippet) > 150:
+                snippet = snippet[:150].rstrip() + "…"
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Post content*\n{snippet}",
+                },
+            })
+
+        blocks += [
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "View on Reddit",
+                            "emoji": False,
+                        },
+                        "url": url,
+                        "style": "primary",
+                    }
                 ],
             },
             {"type": "divider"},
@@ -118,6 +152,8 @@ class SlackNotifier:
                 ],
             },
         ]
+
+        return blocks
 
     def _send_with_retry(
         self, client: WebhookClient, blocks: list, channel_name: str

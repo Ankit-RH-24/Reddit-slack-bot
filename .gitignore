@@ -3,3 +3,7 @@ data/
 logs/
 __pycache__/
 *.pyc
+notification_bot.py
+ping_creds.py
+venv/
+.venv/

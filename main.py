@@ -1,4 +1,5 @@
 import logging
+import multiprocessing
 import os
 import signal
 import sys
@@ -58,7 +59,8 @@ def main():
 
     logger.info("=" * 60)
     logger.info("Reddit Slack Bot starting up")
-    logger.info("Monitoring subreddits: %s", ", ".join(config.subreddits))
+    logger.info("Scope: r/%s", config.scope)
+    logger.info("Blacklisted subreddits: %d", len(config.blacklist_subreddits))
     logger.info(
         "Routing to %d channel(s): %s",
         len(config.channels),
@@ -81,4 +83,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn")
     main()
