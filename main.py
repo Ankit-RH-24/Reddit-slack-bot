@@ -1,13 +1,36 @@
+import http.server
 import logging
 import multiprocessing
 import os
 import signal
 import sys
+import threading
 from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
 
 from monitor import RedditMonitor, load_config
+
+
+def _start_health_server(port: int = 8000):
+    """
+    Tiny HTTP server that replies 200 OK to every request.
+    Runs in a daemon thread — satisfies Koyeb's TCP/HTTP health check
+    without affecting the bot's logic.
+    """
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass  # suppress per-request access logs
+
+    server = http.server.HTTPServer(("0.0.0.0", port), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server
 
 _monitor: RedditMonitor | None = None
 
@@ -69,6 +92,9 @@ def main():
     logger.info("=" * 60)
 
     signal.signal(signal.SIGTERM, _handle_signal)
+
+    _start_health_server(port=8000)
+    logger.info("Health check server listening on port 8000")
 
     _monitor = RedditMonitor(config)
 
