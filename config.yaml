@@ -1,0 +1,29 @@
+reddit:
+  subreddits: [mentalhealth, therapy, psychology, depression, anxiety, selfimprovement, healthandfitness]
+  stream_pause_after_exception: 5
+  max_stream_retries: 10  # -1 = infinite
+
+slack:
+  rate_limit_base_delay: 1.0
+  rate_limit_max_delay: 64.0
+  rate_limit_max_retries: 6
+
+channels:
+  - name: rocket_health
+    webhook_env_var: SLACK_WEBHOOK_A
+    keywords: ["rocket health", "rockethealth"]
+    case_sensitive: false
+  - name: therapy_psychology
+    webhook_env_var: SLACK_WEBHOOK_B
+    keywords: ["online therapy", "psychologists", "counseling", "mental health app"]
+    case_sensitive: false
+
+database:
+  path: data/bot.db
+  cleanup_older_than_days: 90
+
+logging:
+  level: INFO
+  file: logs/bot.log
+  max_bytes: 10485760
+  backup_count: 5
