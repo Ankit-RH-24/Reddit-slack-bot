@@ -21,94 +21,94 @@ channels:
     webhook_env_var: SLACK_WEBHOOK_B
     case_sensitive: false
     keywords:
-      # Original
+      # High Intent
+      - "looking for a therapist in"
+      - "recommend online therapy"
+      - "can anyone recommend a psychologist"
+      - "best online therapy for"
+      - "affordable therapy india"
+      - "book a therapy session"
+      - "sliding scale therapy india"
+      - "urgent mental health chat"
+      # Specialized Care
+      - "cbt for adhd adults"
+      - "dbt therapy online"
+      - "emdr therapy india"
+      - "trauma informed counseling"
+      - "queer affirmative therapy"
+      - "postpartum depression support india"
+      - "grief counseling online"
+      # Competitor Intel
+      - "amaha"
+      - "mindpeers"
+      - "yourdost"
+      - "wysa"
+      - "innerhour"
+      - "betterhelp alternatives india"
+      - "amaha vs betterlyf"
+      - "mindpeers app review"
+      # Professional / Geo
+      - "rci registered psychologist"
+      - "m.phil clinical psychology"
+      - "nimhans trained"
+      - "tiss counselor"
+      - "psychologist in bangalore"
+      - "therapist in mumbai"
+      - "delhi ncr counseling"
+      - "hyderabad mental health"
+      # Cultural / Language
+      - "therapy in hindi"
+      - "tamil counseling online"
+      - "telugu mental health support"
+      - "desi parents mental health"
+      - "toxic indian family therapy"
+      - "log kya kahenge mental health"
+      - "intergenerational trauma india"
+      # Existing — kept (no counseling/psychologist variants)
       - "online therapy"
-      - "psychologists"
-      - "counseling"
       - "mental health app"
       - "find a therapist"
-      # Competitors — direct
       - "amaha therapy"
-      - "mindpeers counseling"
       - "lissun mental health"
-      - "yourdost psychologists"
       - "betterlyf online therapy"
-      # Competitors — specialized platforms
-      - "trijog counseling"
       - "hopequre wellness"
       - "talktoangel psychiatrists"
-      - "wysa human coaching"
       - "manoshala therapist"
-      # Competitor comparison
-      - "amaha vs betterlyf"
       - "best apps like mindpeers"
       - "trijog therapy reviews"
       - "affordable alternatives to amaha"
-      # ADHD (solution-oriented)
       - "adhd therapy for adults"
       - "cbt for adhd"
       - "adhd executive function coaching"
       - "therapists specializing in adhd"
-      - "online adhd counseling"
-      # BPD
       - "dbt therapy for bpd"
-      - "bpd support groups and counseling"
       - "specialist for bpd treatment"
-      - "bpd relationship counseling"
       - "dialectical behavior therapy online"
-      # Psychiatry / integrated care
       - "psychiatrist and therapist combo"
       - "online psychiatric consultation"
       - "medication management and talk therapy"
       - "psychiatrist for anxiety and depression"
       - "integrated mental health care app"
-      # Credential-focused
-      - "rci registered clinical psychologist"
       - "licensed therapist online"
-      - "m.phil psychology counselor"
-      # Language / culture
-      - "therapy in hindi"
-      - "culturally sensitive counseling"
       - "vernacular mental health support"
-      - "counseling in tamil"
-      - "psychologists speaking marathi"
       - "bengali speaking therapist online"
-      # Urgency / action
       - "book therapy session now"
       - "24/7 mental health chat"
       - "first therapy session discount"
-      # Niche therapy
       - "trauma informed therapy"
       - "lgbtq friendly therapists"
-      - "couples counseling online"
-      # Mental health app / tech
       - "self-care and therapy app"
-      - "best app to find psychologists"
       - "anonymous mental health chat app"
       - "pocket therapist app"
       - "daily mood tracker with therapy"
-      # India — geo-modified high intent
       - "online therapy india"
-      - "psychologists in india"
-      - "best counseling apps india"
       - "indian mental health platform"
       - "therapists in bangalore"
-      - "mumbai counseling services"
-      - "psychologists in delhi ncr"
       - "therapy sessions pune"
       - "hyderabad mental health experts"
-      - "clinical psychologist near me"
-      # India — professional & regulatory
-      - "m.phil clinical psychology therapist"
-      - "licensed indian counselors online"
-      - "nimhans trained psychologists"
-      - "tiss certified counselors"
-      # India — cultural stressors
-      - "family pressure counseling india"
       - "workplace stress indian corporate"
       - "academic pressure therapy india"
       - "intergenerational trauma indian context"
-      # India — condition-specific
       - "adult adhd assessment india"
       - "adhd therapy for students india"
       - "cbt for adhd bangalore"
@@ -117,13 +117,10 @@ channels:
       - "dialectical behavior therapy india online"
       - "psychiatrists for anxiety india"
       - "best psychiatrist for bpd india"
-      # India — additional competitors & NGOs
-      - "innerhour"
       - "the banyan"
       - "lonepack"
       - "white swan foundation"
       - "scarf india"
-      - "betterhelp alternatives india"
       - "affordable therapy like yourdost"
 
 slack:
